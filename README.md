@@ -465,7 +465,7 @@ Parameters:
 
 ## 📜 License
 
-MIT License - Built for EthNigeria 2025 Hackathon
+MIT License - Built for Aleph Hackathon 2025
 
 ---
 
