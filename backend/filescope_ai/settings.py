@@ -27,6 +27,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = [
     'filescopeai.onrender.com',
+    'filescope-ai.onrender.com',
     'http://localhost:3000',
     'filescopeai-qdpp.onrender.com',
     'localhost'
