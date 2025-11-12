@@ -547,7 +547,7 @@ const FileScopeApp = () => {
         throw new Error('Wallet not connected');
       }
 
-      // Convert price to wei (FIL has 18 decimals)
+      // Convert price to wei (TFIL has 18 decimals on testnet)
       const priceWei = isPaid && priceInFIL 
         ? BigInt(Math.floor(parseFloat(priceInFIL) * 1e18))
         : BigInt(0);
@@ -559,7 +559,7 @@ const FileScopeApp = () => {
       console.log('Is public:', isPublic);
       console.log('Is private:', !isPublic);
       console.log('Is paid:', isPaid);
-      console.log('Price in FIL:', priceInFIL);
+      console.log('Price in TFIL:', priceInFIL);
       console.log('Price in wei:', priceWei.toString());
       
       // Call the smart contract with all parameters
@@ -1601,7 +1601,7 @@ const FileScopeApp = () => {
                     <div className="mt-4 space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Price (FIL)
+                          Price (TFIL)
                         </label>
                         <input
                           type="number"

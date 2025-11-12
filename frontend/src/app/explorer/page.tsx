@@ -1,10 +1,10 @@
 'use client'
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useReadContract } from 'wagmi';
+import { useReadContract, useWriteContract, useAccount, useWaitForTransactionReceipt } from 'wagmi';
 import { 
   Search, Grid, List, Database, Eye, Download, 
-  Verified, ArrowLeft, AlertTriangle, FileText
+  Verified, ArrowLeft, AlertTriangle, FileText, ShoppingCart
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { fileStoreContract } from '../index';
@@ -16,10 +16,14 @@ interface ContractDataset {
   analysisCID: string;
   uploader: string;
   isPublic: boolean;
+  isPrivate: boolean;
   timestamp: bigint;
   views: bigint;
   downloads: bigint;
   citations: bigint;
+  isPaid: boolean;
+  priceInFIL: bigint;
+  earnings: bigint;
 }
 
 interface DatasetMetadata {
@@ -103,6 +107,12 @@ interface Dataset {
   analysis: {
     verified: boolean;
   };
+  pricing: {
+    isPaid: boolean;
+    priceInFIL: string;
+    priceInFILWei: bigint;
+  };
+  isPurchased: boolean;
 }
 
 interface IPFSData {
@@ -188,9 +198,15 @@ const DatasetExplorer = () => {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
+  const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
+  const [myPurchases, setMyPurchases] = useState<Set<number>>(new Set());
   
-  // Wallet connection check - removed unused variable
-  // const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
+  const { writeContract, data: purchaseHash, isPending: isPurchasing } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isPurchaseConfirmed } = useWaitForTransactionReceipt({
+    hash: purchaseHash,
+  });
 
   const { data: contractDatasets, isLoading: contractLoading } = useReadContract({
     address: fileStoreContract.address as `0x${string}`,
@@ -198,9 +214,37 @@ const DatasetExplorer = () => {
     functionName: 'getAllPublicDatasets',
   });
 
+  // Fetch user's purchases
+  const { data: purchasedDatasetIds } = useReadContract({
+    address: fileStoreContract.address as `0x${string}`,
+    abi: fileStoreContract.abi,
+    functionName: 'getMyPurchases',
+    query: {
+      enabled: isConnected && !!address,
+    },
+  });
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Update purchased datasets when user's purchases are fetched
+  useEffect(() => {
+    if (purchasedDatasetIds && Array.isArray(purchasedDatasetIds)) {
+      const purchasedSet = new Set(purchasedDatasetIds.map((id: bigint) => Number(id)));
+      setMyPurchases(purchasedSet);
+    }
+  }, [purchasedDatasetIds]);
+
+  // Handle purchase confirmation
+  useEffect(() => {
+    if (isPurchaseConfirmed && selectedDataset) {
+      toast.success('Dataset purchased successfully!');
+      setMyPurchases(prev => new Set([...prev, selectedDataset.id]));
+      setPurchaseModalOpen(false);
+      setSelectedDataset(null);
+    }
+  }, [isPurchaseConfirmed, selectedDataset]);
 
   // Fetch IPFS data helper
   const fetchIPFSData = useCallback(async (cid: string): Promise<IPFSData> => {
@@ -733,6 +777,13 @@ const DatasetExplorer = () => {
                 format: getAttributeValue<string>(ipfsData.attributes, 'File Type', 'Unknown')
               });
 
+              // Convert price from wei to TFIL (1 TFIL = 10^18 wei on testnet)
+              const priceInFILWei = contractDataset.priceInFIL || BigInt(0);
+              const priceInFILRaw = priceInFILWei > 0 
+                ? (Number(priceInFILWei) / 1e18).toFixed(6)
+                : '0';
+              const priceInFIL = formatPrice(priceInFILRaw);
+
               const dataset: Dataset = {
                 id: i + 1,
                 title: ipfsData.name || `Dataset ${i + 1}`,
@@ -752,6 +803,12 @@ const DatasetExplorer = () => {
                   tags: ipfsData.attributes.filter(attr => attr.trait_type === 'tags')?.map(attr => attr.value as string) || [],
                   format: getAttributeValue<string>(ipfsData.attributes, 'File Type', 'Unknown')
                 },
+                pricing: {
+                  isPaid: contractDataset.isPaid || false,
+                  priceInFIL,
+                  priceInFILWei,
+                },
+                isPurchased: myPurchases.has(i + 1),
                 results: {
                   metrics: {
                     quality_score: ipfsData.results?.metrics?.quality_score || 0,
@@ -817,7 +874,7 @@ const DatasetExplorer = () => {
 
       processDatasets();
     }
-  }, [mounted, contractDatasets, contractLoading, fetchIPFSData]);
+  }, [mounted, contractDatasets, contractLoading, fetchIPFSData, myPurchases]);
 
   // Helper functions
   const getAttributeValue = <T extends string | number>(attributes: Array<{ trait_type: string; value: string | number }>, traitType: string, defaultValue: T): T => {
@@ -831,12 +888,61 @@ const DatasetExplorer = () => {
     return 'text-red-600';
   };
 
+  // Format price to remove trailing zeros
+  const formatPrice = (price: string | number): string => {
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+    if (isNaN(numPrice) || numPrice === 0) return '0';
+    
+    // If it's a whole number, return without decimals
+    if (numPrice % 1 === 0) {
+      return numPrice.toString();
+    }
+    
+    // Otherwise, remove trailing zeros (up to 6 decimal places)
+    return numPrice.toFixed(6).replace(/\.?0+$/, '');
+  };
+
   const formatNumber = (num: number) => {
     return num.toLocaleString();
   };
 
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString();
+  };
+
+  // Purchase dataset handler
+  const handlePurchase = (dataset: Dataset) => {
+    if (!isConnected) {
+      toast.error('Please connect your wallet to purchase datasets');
+      return;
+    }
+    setSelectedDataset(dataset);
+    setPurchaseModalOpen(true);
+  };
+
+  // Execute purchase transaction
+  const executePurchase = async () => {
+    if (!selectedDataset || !isConnected) {
+      toast.error('Please connect your wallet');
+      return;
+    }
+
+    try {
+      // Use native TFIL token (address(0) for native token on testnet)
+      const nativeTokenAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+      
+      writeContract({
+        address: fileStoreContract.address as `0x${string}`,
+        abi: fileStoreContract.abi,
+        functionName: 'purchaseDataset',
+        args: [BigInt(selectedDataset.id), nativeTokenAddress],
+      });
+      
+      toast.loading('Processing purchase...', { id: 'purchase' });
+    } catch (error) {
+      console.error('Purchase failed:', error);
+      toast.error('Purchase failed. Please try again.', { id: 'purchase' });
+    }
   };
 
   // Download original dataset (full JSON)
@@ -923,13 +1029,82 @@ const DatasetExplorer = () => {
     }
   };
 
+  // Purchase Modal Component
+  const PurchaseModal = () => {
+    if (!selectedDataset) return null;
+
+    return (
+      <div className={`fixed inset-0 z-50 flex items-center justify-center ${purchaseModalOpen ? '' : 'hidden'}`}>
+        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setPurchaseModalOpen(false)}></div>
+        <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Purchase Dataset</h2>
+            <button
+              onClick={() => setPurchaseModalOpen(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              {selectedDataset.title}
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 text-sm mb-4">
+              {selectedDataset.description}
+            </p>
+            <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-gray-600 dark:text-gray-400">Price:</span>
+                <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {selectedDataset.pricing.priceInFIL} TFIL
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                You will receive access to download the dataset and analysis report
+              </div>
+            </div>
+          </div>
+
+          <div className="flex space-x-3">
+            <button
+              onClick={() => setPurchaseModalOpen(false)}
+              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={executePurchase}
+              disabled={isPurchasing || isConfirming}
+              className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isPurchasing || isConfirming ? 'Processing...' : 'Purchase'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Dataset card component
   const DatasetCard = ({ dataset }: { dataset: Dataset }) => (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-xl transition-shadow">
       <div className="p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          {dataset.title}
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            {dataset.title}
+          </h3>
+          {dataset.pricing.isPaid && (
+            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+              dataset.isPurchased 
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
+                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+            }`}>
+              {dataset.isPurchased ? 'Owned' : `${dataset.pricing.priceInFIL} TFIL`}
+            </span>
+          )}
+        </div>
         <p className="text-gray-600 dark:text-gray-300 text-sm mb-4">
           {dataset.description}
         </p>
@@ -985,35 +1160,56 @@ const DatasetExplorer = () => {
           </div>
         </div>
 
-        {/* Download Section - Redesigned */}
+        {/* Download/Purchase Section */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600 dark:text-gray-300 font-medium">Download Options</span>
-          </div>
-          
-          <div className="flex space-x-2">
+          {dataset.pricing.isPaid && !dataset.isPurchased ? (
             <button
-              onClick={() => downloadOriginalDataset(dataset)}
-              className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+              onClick={() => handlePurchase(dataset)}
+              className="w-full inline-flex items-center justify-center space-x-2 px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
-              <Download className="w-3 h-3" />
-              <span>Original</span>
+              <ShoppingCart className="w-4 h-4" />
+              <span>Purchase for {dataset.pricing.priceInFIL} TFIL</span>
             </button>
-            <button
-              onClick={() => downloadAnalysisResults(dataset)}
-              className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
-            >
-              <FileText className="w-3 h-3" />
-              <span>Report</span>
-            </button>
-            <button
-              onClick={() => downloadCompleteDataset(dataset)}
-              className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-medium transition-all duration-200"
-            >
-              <Download className="w-3 h-3" />
-              <span>Full Package</span>
-            </button>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-300 font-medium">Download Options</span>
+                {dataset.pricing.isPaid && dataset.isPurchased && (
+                  <span className="text-xs text-green-600 dark:text-green-400 flex items-center space-x-1">
+                    <Verified className="w-3 h-3" />
+                    <span>Owned</span>
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => downloadOriginalDataset(dataset)}
+                  disabled={dataset.pricing.isPaid && !dataset.isPurchased}
+                  className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Original</span>
+                </button>
+                <button
+                  onClick={() => downloadAnalysisResults(dataset)}
+                  disabled={dataset.pricing.isPaid && !dataset.isPurchased}
+                  className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FileText className="w-3 h-3" />
+                  <span>Report</span>
+                </button>
+                <button
+                  onClick={() => downloadCompleteDataset(dataset)}
+                  disabled={dataset.pricing.isPaid && !dataset.isPurchased}
+                  className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Full Package</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1036,6 +1232,15 @@ const DatasetExplorer = () => {
             }`}>
               {dataset.category}
             </span>
+            {dataset.pricing.isPaid && (
+              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                dataset.isPurchased 
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
+                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+              }`}>
+                {dataset.isPurchased ? 'Owned' : `${dataset.pricing.priceInFIL} TFIL`}
+              </span>
+            )}
           </div>
           <p className="text-gray-600 dark:text-gray-300 text-sm mb-2">
             {dataset.description}
@@ -1077,30 +1282,49 @@ const DatasetExplorer = () => {
             </div>
           </div>
           
-          {/* Download Section - List View */}
-          <div className="flex space-x-2">
+          {/* Download/Purchase Section - List View */}
+          {dataset.pricing.isPaid && !dataset.isPurchased ? (
             <button
-              onClick={() => downloadOriginalDataset(dataset)}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+              onClick={() => handlePurchase(dataset)}
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-xl"
             >
-              <Download className="w-3 h-3" />
-              <span>Original</span>
+              <ShoppingCart className="w-4 h-4" />
+              <span>Purchase {dataset.pricing.priceInFIL} TFIL</span>
             </button>
-            <button
-              onClick={() => downloadAnalysisResults(dataset)}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
-            >
-              <FileText className="w-3 h-3" />
-              <span>Report</span>
-            </button>
-            <button
-              onClick={() => downloadCompleteDataset(dataset)}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-medium transition-all duration-200"
-            >
-              <Download className="w-3 h-3" />
-              <span>Full Package</span>
-            </button>
-          </div>
+          ) : (
+            <div className="flex space-x-2">
+              {dataset.pricing.isPaid && dataset.isPurchased && (
+                <span className="text-xs text-green-600 dark:text-green-400 flex items-center space-x-1 mr-2">
+                  <Verified className="w-3 h-3" />
+                  <span>Owned</span>
+                </span>
+              )}
+              <button
+                onClick={() => downloadOriginalDataset(dataset)}
+                disabled={dataset.pricing.isPaid && !dataset.isPurchased}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-3 h-3" />
+                <span>Original</span>
+              </button>
+              <button
+                onClick={() => downloadAnalysisResults(dataset)}
+                disabled={dataset.pricing.isPaid && !dataset.isPurchased}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileText className="w-3 h-3" />
+                <span>Report</span>
+              </button>
+              <button
+                onClick={() => downloadCompleteDataset(dataset)}
+                disabled={dataset.pricing.isPaid && !dataset.isPurchased}
+                className="inline-flex items-center space-x-1 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-3 h-3" />
+                <span>Full Package</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1108,6 +1332,7 @@ const DatasetExplorer = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <PurchaseModal />
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

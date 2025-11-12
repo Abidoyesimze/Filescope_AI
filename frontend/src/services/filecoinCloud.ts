@@ -16,7 +16,7 @@ export interface PaymentStatus {
 
 export interface UploadResult {
   pieceCid: string;
-  dataSetId?: number;
+  dataSetId?: number | string;
 }
 
 export class FilecoinCloudService {
@@ -28,7 +28,11 @@ export class FilecoinCloudService {
    */
   async initialize(ethereumProvider: typeof window.ethereum): Promise<void> {
     try {
-      this.provider = new ethers.BrowserProvider(ethereumProvider);
+      if (!ethereumProvider) {
+        throw new Error('Ethereum provider is not available');
+      }
+      // Type assertion: window.ethereum is compatible with Eip1193Provider when not null
+      this.provider = new ethers.BrowserProvider(ethereumProvider as unknown as ethers.Eip1193Provider);
       this.synapse = await Synapse.create({ 
         provider: this.provider,
         // Use calibration testnet for now
@@ -55,7 +59,7 @@ export class FilecoinCloudService {
 
       // If not approved, we need setup (both deposit and approval)
       // If approved but rateAllowance is 0, we might need more allowance
-      const needsSetup = !serviceStatus.isApproved || serviceStatus.rateAllowance === 0n;
+      const needsSetup = !serviceStatus.isApproved || serviceStatus.rateAllowance === BigInt(0);
 
       return {
         isApproved: serviceStatus.isApproved,
@@ -71,9 +75,9 @@ export class FilecoinCloudService {
       // If error checking, assume setup is needed
       return {
         isApproved: false,
-        rateAllowance: 0n,
-        rateUsed: 0n,
-        maxLockupPeriod: 0n,
+        rateAllowance: BigInt(0),
+        rateUsed: BigInt(0),
+        maxLockupPeriod: BigInt(0),
         needsDeposit: true,
         needsApproval: true,
         currentBalance: undefined,
@@ -88,7 +92,7 @@ export class FilecoinCloudService {
     depositAmount: bigint,
     rateAllowance: bigint,
     lockupAllowance: bigint,
-    maxLockupPeriod: bigint = 86400n // 30 days default
+    maxLockupPeriod: bigint = BigInt(86400) // 30 days default
   ): Promise<{ depositTx?: string; approvalTx?: string }> {
     if (!this.synapse) {
       throw new Error('Synapse not initialized. Call initialize() first.');
@@ -173,8 +177,9 @@ export class FilecoinCloudService {
       console.log('✅ Upload complete! PieceCID:', result.pieceCid);
       
       return {
-        pieceCid: result.pieceCid,
-        dataSetId: result.dataSetId,
+        pieceCid: String(result.pieceCid),
+        // dataSetId may not be available in all SDK versions
+        dataSetId: (result as { dataSetId?: number | string }).dataSetId,
       };
     } catch (error) {
       console.error('❌ Failed to upload dataset:', error);

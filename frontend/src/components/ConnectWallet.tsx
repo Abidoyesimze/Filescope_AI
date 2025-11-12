@@ -15,7 +15,7 @@ export function ConnectWallet() {
   const { open } = useAppKit();
 
   const supportedChainIds = useMemo(
-    () => new Set(appKitNetworks.map((network) => network.id)),
+    () => new Set<number>(appKitNetworks.map((network) => Number(network.id))),
     []
   );
 
