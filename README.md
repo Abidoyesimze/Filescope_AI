@@ -522,7 +522,6 @@ Parameters:
 
 ## 📜 License
 
-MIT License - Built for Aleph Hackathon 2025
 
 ---
 
