@@ -3,7 +3,7 @@
 ## Decentralized AI-Powered Dataset Analysis & Verification Platform
 
 
-FileScope AI transforms any dataset into trusted intelligence through advanced AI analysis, anomaly detection, and blockchain verification. Upload your data, get instant insights, and store results permanently on Filecoin Onchain Cloud for complete transparency.
+FileScope AI provides dataset analysis, anomaly detection, and blockchain verification. Upload datasets, get analysis results, and store them on Filecoin.
 
 ---
 
@@ -14,31 +14,43 @@ In today's data-driven world, datasets are often:
 - **Unverifiable**: No way to trust the analysis or detect manipulation
 - **Inaccessible**: Complex tools requiring data science expertise
 
-FileScope AI solves this by providing **AI-powered analysis with blockchain verification** that anyone can use and trust.
+FileScope AI provides dataset analysis with blockchain verification.
 
 ---
 
 ## 🚀 Key Features
 
-### 🧠 Advanced AI Analysis Engine
-- **Quality Scoring Algorithm**: Comprehensive dataset evaluation (0-100 score)
-- **Anomaly Detection**: Statistical outlier identification using multiple methods
-- **Bias Assessment**: Algorithmic bias detection across protected attributes
-- **Data Profiling**: Automated schema inference and statistical analysis
-- **Missing Data Analysis**: Intelligent gap detection and impact assessment
-- **Correlation Discovery**: Advanced relationship mapping between variables
+### 🧠 Analysis Engine
+- **Quality Scoring**: Dataset evaluation (0-100 score)
+- **Anomaly Detection**: Statistical outlier identification
+- **Bias Assessment**: Bias detection across protected attributes
+- **Data Profiling**: Schema inference and statistical analysis
+- **Missing Data Analysis**: Gap detection and impact assessment
+- **Correlation Discovery**: Relationship mapping between variables
 
 ### 🔗 Blockchain Integration
-- **Filecoin Storage**: Permanent, decentralized dataset storage
-- **IPFS Integration**: Content-addressed storage with cryptographic verification
+- **Filecoin Onchain Cloud (FOC)**: Decentralized storage with verifiable proofs
+  - **Warm Storage Service**: Fast, persistent, and verifiable data storage
+  - **Proof of Data Possession (PDP)**: Cryptographic proofs for data integrity
+  - **Filecoin Beam**: CDN-like retrieval for fast access
+  - **Programmable Payments**: Automated payment streams for ongoing storage costs
+- **IPFS Integration**: Content-addressed storage with cryptographic verification (for private/free datasets)
 - **Immutable Analysis**: Tamper-proof analysis results on blockchain
 - **Public Verification**: Anyone can verify analysis integrity
+- **Smart Contract Registry**: Dataset ownership and access control on-chain
 
-### 📊 Smart Visualizations
-- **Auto-Generated Charts**: Distribution plots, correlation matrices, outlier visualizations
-- **Interactive Dashboards**: Real-time exploration of analysis results
-- **Bias Visualization**: Clear representation of detected biases
-- **Quality Metrics**: Visual quality scorecards and improvement suggestions
+### 📊 Visualizations
+- **Charts**: Distribution plots, correlation matrices, outlier visualizations
+- **Dashboards**: Exploration of analysis results
+- **Bias Visualization**: Representation of detected biases
+- **Quality Metrics**: Quality scorecards and improvement suggestions
+
+### 💰 Monetization
+- **Paid Datasets**: Set prices in TFIL tokens for dataset downloads
+- **Earnings Tracking**: Track earnings from dataset purchases
+- **Payment Rails**: Automated payment streams for FOC storage costs
+- **Purchase Flow**: Checkout for buyers
+- **Ownership Verification**: Blockchain-based proof of purchase
 
 ### 🔗Key SDK Features
 - Easy dataset upload and analysis via simple function calls
@@ -68,17 +80,54 @@ FileScope AI solves this by providing **AI-powered analysis with blockchain veri
          │                       │
          │                       ▼
          │              ┌─────────────────┐
-         │              │  Filecoin/IPFS  │
          │              │  Storage Layer  │
+         │              │  • FOC (Public) │
+         │              │  • IPFS (Private)│
          │              └─────────────────┘
          │
          ▼
 ┌─────────────────┐
 │  Web3 Wallet    │
 │  Integration    │
-│  (WalletConnect)│
+│  (AppKit/WC)    │
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Smart Contract │
+│  Registry       │
+│  (Ownership)    │
 └─────────────────┘
 ```
+
+---
+
+## 💾 Storage Strategy
+
+Storage strategy based on dataset visibility and monetization:
+
+### Public Datasets → Filecoin Onchain Cloud (FOC)
+- **Why FOC?** Better retrievability, verifiable proofs, and CDN-like access
+- **Features:**
+  - Warm Storage Service for fast, persistent storage
+  - Proof of Data Possession (PDP) for data integrity
+  - Filecoin Beam for CDN-like retrieval
+  - No payment setup required for public datasets
+
+### Paid Datasets → Filecoin Onchain Cloud (FOC)
+- **Why FOC?** Enterprise-grade storage with programmable payments
+- **Features:**
+  - Same benefits as public datasets
+  - Payment rails for automated storage cost management
+  - USDFC token deposits and service approvals
+  - One-time payment setup per wallet
+
+### Private/Free Datasets → IPFS
+- **Why IPFS?** Cost-effective for private datasets
+- **Features:**
+  - Content-addressed storage
+  - Cryptographic verification
+  - No payment setup required
 
 ---
 
@@ -88,7 +137,7 @@ FileScope AI solves this by providing **AI-powered analysis with blockchain veri
 ```python
 def calculate_quality_score(df):
     """
-    Comprehensive quality assessment with 4 key dimensions:
+    Quality assessment with 4 key dimensions:
     
     - Completeness (40%): Missing data analysis
     - Size Adequacy (30%): Statistical power assessment  
@@ -107,7 +156,7 @@ def calculate_quality_score(df):
 ```python
 def detect_anomalies(df):
     """
-    Multi-method anomaly detection:
+    Anomaly detection using:
     
     - Statistical methods (IQR, Z-score, Modified Z-score)
     - Machine learning approaches (Isolation Forest, Local Outlier Factor)
@@ -125,7 +174,7 @@ def detect_anomalies(df):
 ```python
 def analyze_bias(df, protected_attributes):
     """
-    Comprehensive bias analysis across multiple dimensions:
+    Bias analysis across multiple dimensions:
     
     - Demographic parity assessment
     - Equal opportunity violations
@@ -140,11 +189,11 @@ def analyze_bias(df, protected_attributes):
 - **Predictive Parity**: Consistent accuracy across groups
 - **Individual Fairness**: Similar individuals receive similar outcomes
 
-### 4. **Advanced Statistics Engine**
+### 4. **Statistics Engine**
 ```python
 def get_detailed_statistics(df):
     """
-    Deep statistical profiling:
+    Statistical profiling:
     
     - Distribution analysis (normality tests, skewness, kurtosis)
     - Correlation analysis (Pearson, Spearman, Kendall)
@@ -182,6 +231,7 @@ chardet>=4.0.0         # Character encoding detection
 web3>=6.0.0            # Ethereum interaction
 ipfshttpclient>=0.8.0  # IPFS integration
 filecoin-py>=0.1.0     # Filecoin storage API
+@filoz/synapse-sdk     # Filecoin Onchain Cloud SDK
 ```
 
 ### Frontend (React/Next.js)
@@ -192,6 +242,8 @@ filecoin-py>=0.1.0     # Filecoin storage API
     "react": "^18.0.0",
     "wagmi": "^1.4.0",           // Web3 wallet integration
     "viem": "^1.16.0",           // Ethereum interactions
+    "@reown/appkit": "^1.0.0",   // Wallet connection UI
+    "@filoz/synapse-sdk": "^1.0.0", // Filecoin Onchain Cloud SDK
     "recharts": "^2.8.0",        // Data visualization
     "lucide-react": "^0.263.0",  // Icons
     "tailwindcss": "^3.3.0"      // Styling
@@ -205,7 +257,7 @@ filecoin-py>=0.1.0     # Filecoin storage API
 
 ### Quality Score Breakdown
 ```python
-# Real analysis output from our algorithm
+# Example output
 {
   "total_score": 87.5,
   "component_scores": {
@@ -224,7 +276,7 @@ filecoin-py>=0.1.0     # Filecoin storage API
 
 ### Anomaly Detection Results
 ```python
-# Multi-method anomaly detection output
+# Example output
 {
   "total_anomalies": 23,
   "detection_methods": {
@@ -243,7 +295,7 @@ filecoin-py>=0.1.0     # Filecoin storage API
 
 ### Bias Analysis Output
 ```python
-# Comprehensive bias assessment
+# Example output
 {
   "overall_bias_score": 0.23,  # 0 = no bias, 1 = maximum bias
   "protected_attributes": ["gender", "age_group", "ethnicity"],
@@ -319,8 +371,11 @@ FILECOIN_API_KEY=your_filecoin_api_key
 IPFS_NODE_URL=https://ipfs.infura.io:5001
 
 # Frontend (.env.local)
-NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=your_project_id
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api
+FILECOIN_CLOUD_BASE_URL=https://calib2.ezpdpz.net  # FOC testnet URL
+FILECOIN_CLOUD_STORAGE_PROVIDER=your_storage_provider_address
+FILECOIN_CLOUD_BEAM_BASE_URL=https://beam.calibration.fildev.network
 ```
 
 ---
@@ -412,26 +467,25 @@ Parameters:
 
 ---
 
-## 🏆 Hackathon Innovation
 
-### What Makes FileScope AI Special?
+### Features
 
-1. **Real AI, Not Mock Data**: Our analysis engine uses proven ML algorithms (Isolation Forest, LOF, statistical tests) for genuine insights
+- Analysis engine using ML algorithms (Isolation Forest, LOF, statistical tests)
+- Filecoin Onchain Cloud integration with verifiable proofs and programmable payments
+- Storage routing: public datasets use FOC, private datasets use IPFS
+- Monetization: sell datasets for TFIL tokens
+- Bias detection, anomaly identification, and quality scoring
 
-2. **Blockchain Verification**: First platform to combine AI dataset analysis with permanent Filecoin storage
-
-3. **Public Good Focus**: Designed for transparency, journalism, and research rather than just commercial use
-
-4. **Comprehensive Analysis**: Goes beyond basic statistics to include bias detection, anomaly identification, and quality scoring
-
-5. **User-Friendly**: Complex AI made accessible through intuitive interface
-
-### Technical Innovation
-- Custom quality scoring algorithm with 30+ metrics
-- Multi-method anomaly detection ensemble
-- Real-time bias assessment across multiple fairness criteria
-- Automatic visualization generation based on data types
+### Technical Details
+- Quality scoring algorithm with 30+ metrics
+- Anomaly detection using multiple methods
+- Bias assessment across multiple fairness criteria
+- Visualization generation based on data types
 - Blockchain-verified analysis integrity
+- Filecoin Onchain Cloud integration with Synapse SDK
+- Storage routing (FOC for public/paid, IPFS for private/free)
+- Programmable payment rails for storage cost management
+- IndexedDB persistence for upload recovery
 
 ---
 
@@ -446,9 +500,13 @@ Parameters:
 
 ### Phase 1 (Current)
 - ✅ Core AI analysis engine
-- ✅ Basic Filecoin integration
-- ✅ Web interface
-- ✅ API monetization for enterprise users
+- ✅ Filecoin Onchain Cloud (FOC) integration
+- ✅ Warm Storage Service with verifiable proofs
+- ✅ Monetization features (paid datasets)
+- ✅ Payment setup and automated payment rails
+- ✅ Web interface with AppKit wallet integration
+- ✅ Public datasets stored on FOC for better retrievability
+- ✅ Private/free datasets on IPFS
 
 
 ### Phase 2 (Next 3 months)
@@ -471,10 +529,9 @@ MIT License - Built for Aleph Hackathon 2025
 ## 🙏 Acknowledgments
 
 - **Filecoin Foundation** for decentralized storage infrastructure
-- **Open-source ML community** for the incredible tools and libraries
-- **Web3 ecosystem** for making decentralized applications possible
+- **Open-source ML community** for tools and libraries
+- **Web3 ecosystem** for decentralized application infrastructure
 
 ---
 
-*"Turning every dataset into trusted intelligence, one upload at a time."* 🚀
 
