@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
     '@reown/appkit-scaffold-ui',
     '@reown/appkit-ui',
     '@reown/appkit-controllers',
+    '@filoz/synapse-sdk',
+    '@web3-storage/data-segment',
   ],
   webpack: (config, { isServer, webpack }) => {
     // Fix for AppKit module resolution

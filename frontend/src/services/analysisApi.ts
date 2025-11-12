@@ -641,16 +641,17 @@ class AnalysisAPIService {
     };
 
     const metadata = (backendResult.metadata ?? {}) as Partial<MetadataResponse>;
-    const datasetInfo = (backendResult.dataset_info ?? {}) as Partial<DatasetInfoResponse>;
-    const results = (backendResult.results ?? {}) as Record<string, any>;
-    const qualityScoreRaw = (results as Record<string, any>)?.quality_score || {};
-    const qualityAnalysis = (results as Record<string, any>)?.quality_analysis || {};
+    // Prioritize root-level dataset_info over nested one in results
+    const datasetInfo = (backendResult.dataset_info ?? (backendResult.results as Record<string, unknown>)?.dataset_info ?? {}) as Partial<DatasetInfoResponse>;
+    const results = (backendResult.results ?? {}) as Record<string, unknown>;
+    const qualityScoreRaw = ((results as Record<string, unknown>)?.quality_score ?? {}) as Record<string, unknown>;
+    const qualityAnalysis = ((results as Record<string, unknown>)?.quality_analysis ?? {}) as Record<string, unknown>;
     const componentScores =
-      qualityAnalysis.component_scores ||
-      qualityScoreRaw.component_scores ||
-      {};
-    const basicMetrics = (results as Record<string, any>)?.basic_metrics || {};
-    const fileStructure = (results as Record<string, any>)?.file_structure_analysis || backendResult.file_structure_analysis;
+      ((qualityAnalysis.component_scores as Record<string, unknown>) ??
+      (qualityScoreRaw.component_scores as Record<string, unknown>) ??
+      {}) as Record<string, unknown>;
+    const basicMetrics = ((results as Record<string, unknown>)?.basic_metrics ?? {}) as Record<string, unknown>;
+    const fileStructure = (results as Record<string, unknown>)?.file_structure_analysis || backendResult.file_structure_analysis;
     const fileHealth = backendResult.file_health || {
       structure_score: 100,
       issues_detected: 0,
@@ -658,7 +659,9 @@ class AnalysisAPIService {
       can_analyze: true,
     };
     const insightsRaw: Array<string | { title?: string; description?: string; action?: string; type?: string }> =
-      (results as Record<string, any>)?.insights || [];
+      (Array.isArray((results as Record<string, unknown>)?.insights) 
+        ? (results as Record<string, unknown>)?.insights 
+        : []) as Array<string | { title?: string; description?: string; action?: string; type?: string }>;
 
     const transformedInsights = insightsRaw.length > 0
       ? insightsRaw.map((item, index) => {
@@ -685,52 +688,83 @@ class AnalysisAPIService {
         }];
 
     const overallQuality = toNumber(
-      qualityAnalysis.overall_score ??
-        qualityAnalysis.total_score ??
-        qualityScoreRaw.total_score ??
-        qualityScoreRaw.base_score,
+      (qualityAnalysis.overall_score as number | undefined) ??
+        (qualityAnalysis.total_score as number | undefined) ??
+        (qualityScoreRaw.total_score as number | undefined) ??
+        (qualityScoreRaw.base_score as number | undefined),
       toNumber(
-        componentScores.completeness ??
-          componentScores.consistency ??
-          componentScores.format_compliance,
+        (componentScores.completeness as number | undefined) ??
+          (componentScores.consistency as number | undefined) ??
+          (componentScores.format_compliance as number | undefined),
         0
       )
     );
     const completenessScore = toNumber(
-      componentScores.completeness,
+      componentScores.completeness as number | undefined,
       basicMetrics.missing_percentage !== undefined
         ? Math.max(0, 100 - toNumber(basicMetrics.missing_percentage, 0))
-        : qualityScoreRaw.component_scores?.completeness
+        : ((qualityScoreRaw.component_scores as Record<string, unknown>)?.completeness as number | undefined)
     );
 
     const biasRaw =
-      (results as Record<string, any>)?.bias_analysis ||
-      (results as Record<string, any>)?.bias_metrics ||
-      {};
+      ((results as Record<string, unknown>)?.bias_analysis ??
+      (results as Record<string, unknown>)?.bias_metrics ??
+      {}) as Record<string, unknown>;
+    // Backend returns overall_bias_score, not overall
+    const overallBiasScore = toNumber(
+      (biasRaw.overall_bias_score as number | undefined) ?? (biasRaw.overall as number | undefined) ?? 100,
+      100
+    );
+    const geographicRaw = (biasRaw.geographic ?? {}) as Record<string, unknown>;
+    const demographicRaw = (biasRaw.demographic ?? {}) as Record<string, unknown>;
     const defaultBias = {
-      overall: toNumber(biasRaw?.overall, 0),
+      overall: overallBiasScore,
       geographic: {
-        score: toNumber(biasRaw?.geographic?.score, 0),
-        status: biasRaw?.geographic?.status || 'Unknown',
-        description: biasRaw?.geographic?.description || 'No bias metrics available',
+        score: toNumber(geographicRaw.score, 0),
+        status: (geographicRaw.status as string | undefined) || 'Unknown',
+        description: (geographicRaw.description as string | undefined) || 'No bias metrics available',
       },
       demographic: {
-        score: toNumber(biasRaw?.demographic?.score, 0),
-        status: biasRaw?.demographic?.status || 'Unknown',
-        description: biasRaw?.demographic?.description || 'No bias metrics available',
+        score: toNumber(demographicRaw.score, 0),
+        status: (demographicRaw.status as string | undefined) || 'Unknown',
+        description: (demographicRaw.description as string | undefined) || 'No bias metrics available',
       },
     };
 
     const anomaliesRaw =
-      (results as Record<string, any>)?.anomaly_detection ||
-      (results as Record<string, any>)?.anomalies ||
-      {};
+      ((results as Record<string, unknown>)?.anomaly_detection ??
+      (results as Record<string, unknown>)?.anomalies ??
+      {}) as Record<string, unknown>;
     const anomalies = {
-      total: toNumber(anomaliesRaw.total_anomalies ?? anomaliesRaw.total ?? anomaliesRaw.count, 0),
-      high: toNumber(anomaliesRaw.critical ?? anomaliesRaw.high, 0),
-      medium: toNumber(anomaliesRaw.moderate ?? anomaliesRaw.medium, 0),
-      low: toNumber(anomaliesRaw.low, 0),
-      details: anomaliesRaw.examples ?? anomaliesRaw.details ?? [],
+      total: toNumber(
+        (anomaliesRaw.total_anomalies as number | undefined) ?? 
+        (anomaliesRaw.total as number | undefined) ?? 
+        (anomaliesRaw.count as number | undefined), 
+        0
+      ),
+      high: toNumber(
+        (anomaliesRaw.critical as number | undefined) ?? 
+        (anomaliesRaw.high as number | undefined), 
+        0
+      ),
+      medium: toNumber(
+        (anomaliesRaw.moderate as number | undefined) ?? 
+        (anomaliesRaw.medium as number | undefined), 
+        0
+      ),
+      low: toNumber(anomaliesRaw.low as number | undefined, 0),
+      details: (Array.isArray(anomaliesRaw.examples) 
+        ? anomaliesRaw.examples 
+        : Array.isArray(anomaliesRaw.details) 
+          ? anomaliesRaw.details 
+          : []) as Array<{
+        column: string;
+        type: string;
+        count: number;
+        severity: string;
+        description: string;
+        recommendation: string;
+      }>,
     };
 
     const formatBytes = (bytes?: number): string => {
@@ -748,8 +782,18 @@ class AnalysisAPIService {
         fileName: metadata.file_name || datasetInfo.original_filename || 'dataset.csv',
         uploadDate: metadata.upload_date || new Date().toISOString(),
         fileSize: metadata.file_size || formatBytes(datasetInfo.size_bytes),
-        rows: toNumber(datasetInfo.rows ?? metadata.rows ?? basicMetrics.total_rows, 0),
-        columns: toNumber(datasetInfo.columns ?? metadata.columns ?? basicMetrics.total_columns, 0),
+        rows: toNumber(
+          datasetInfo.rows ?? 
+          metadata.rows ?? 
+          (basicMetrics.total_rows as number | undefined), 
+          0
+        ),
+        columns: toNumber(
+          datasetInfo.columns ?? 
+          metadata.columns ?? 
+          (basicMetrics.total_columns as number | undefined), 
+          0
+        ),
         processingTime: '2-3 seconds',
         ipfsHash: metadata.ipfs_hash || '',
         contractAddress: metadata.contract_address || '',
@@ -770,20 +814,42 @@ class AnalysisAPIService {
         original_filename: datasetInfo.original_filename ?? metadata.file_name ?? 'Uploaded Dataset',
         file_type: datasetInfo.file_type || 'Unknown',
         actual_content_type: datasetInfo.actual_content_type || 'unknown',
-        rows: toNumber(datasetInfo.rows ?? metadata.rows ?? basicMetrics.total_rows, 0),
-        columns: toNumber(datasetInfo.columns ?? metadata.columns ?? basicMetrics.total_columns, 0),
+        rows: toNumber(
+          datasetInfo.rows ?? 
+          metadata.rows ?? 
+          (basicMetrics.total_rows as number | undefined), 
+          0
+        ),
+        columns: toNumber(
+          datasetInfo.columns ?? 
+          metadata.columns ?? 
+          (basicMetrics.total_columns as number | undefined), 
+          0
+        ),
         size_bytes: toNumber(datasetInfo.size_bytes, 0),
-        memory_usage_mb: toNumber(datasetInfo.memory_usage_mb ?? basicMetrics.memory_usage_mb, 0),
-        missing_percentage: toNumber(datasetInfo.missing_percentage ?? basicMetrics.missing_percentage, 0),
+        memory_usage_mb: toNumber(
+          datasetInfo.memory_usage_mb ?? 
+          (basicMetrics.memory_usage_mb as number | undefined), 
+          0
+        ),
+        missing_percentage: toNumber(
+          datasetInfo.missing_percentage ?? 
+          (basicMetrics.missing_percentage as number | undefined), 
+          0
+        ),
         has_missing_values:
           datasetInfo.has_missing_values ??
-          (toNumber(datasetInfo.missing_percentage ?? basicMetrics.missing_percentage, 0) > 0),
+          (toNumber(
+            datasetInfo.missing_percentage ?? 
+            (basicMetrics.missing_percentage as number | undefined), 
+            0
+          ) > 0),
         column_names: datasetInfo.column_names || [],
         column_types: datasetInfo.column_types || {},
         extension_mismatch: datasetInfo.extension_mismatch ?? false,
       },
       file_health: fileHealth,
-      file_structure_analysis: fileStructure,
+      file_structure_analysis: fileStructure as FrontendAnalysisResult['file_structure_analysis'],
     };
   }
 

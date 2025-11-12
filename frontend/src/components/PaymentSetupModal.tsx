@@ -30,7 +30,7 @@ export function PaymentSetupModal({
   const depositAmount = ethers.parseUnits('100', 18); // 100 USDFC
   const rateAllowance = ethers.parseUnits('10', 18); // 10 USDFC per epoch
   const lockupAllowance = ethers.parseUnits('1000', 18); // 1000 USDFC total
-  const maxLockupPeriod = 86400n; // 30 days
+  const maxLockupPeriod = BigInt(86400); // 30 days
 
   useEffect(() => {
     if (isOpen) {
@@ -153,7 +153,7 @@ export function PaymentSetupModal({
                     Payment setup complete!
                   </h3>
                   <p className="text-sm text-green-800 dark:text-green-200 mt-1">
-                    You're ready to upload monetized datasets to Filecoin Onchain Cloud.
+                    You&apos;re ready to upload monetized datasets to Filecoin Onchain Cloud.
                   </p>
                 </div>
               </div>

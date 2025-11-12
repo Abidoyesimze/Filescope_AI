@@ -308,6 +308,111 @@ const FileScope = () => {
         </div>
       </section>
 
+      {/* Filecoin Onchain Cloud & Monetization Features */}
+      <section id="foc-features" className="py-24 px-4 bg-white dark:bg-gray-900">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6">
+              Powered by <span className="text-blue-600">Filecoin Onchain Cloud</span>
+            </h2>
+            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+              Enterprise-grade storage, verifiable proofs, and programmable payments—all on-chain.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 mb-12">
+            {/* FOC Features Card */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-8 rounded-2xl border-2 border-blue-200 dark:border-blue-800 shadow-lg">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
+                  <Shield className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Warm Storage</h3>
+              </div>
+              <p className="text-gray-700 dark:text-gray-300 mb-6 leading-relaxed">
+                Fast, persistent, and verifiable data storage with Proof of Data Possession (PDP). 
+                Your datasets are always accessible with cryptographic guarantees.
+              </p>
+              <ul className="space-y-3">
+                <li className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 dark:text-gray-300">Instant retrieval with CDN-like performance</span>
+                </li>
+                <li className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 dark:text-gray-300">Cryptographic proofs verify data integrity</span>
+                </li>
+                <li className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 dark:text-gray-300">Automated payment rails for ongoing storage</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Monetization Card */}
+            <div className="bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 p-8 rounded-2xl border-2 border-yellow-200 dark:border-yellow-800 shadow-lg">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center">
+                  <Zap className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Monetize Your Data</h3>
+              </div>
+              <p className="text-gray-700 dark:text-gray-300 mb-6 leading-relaxed">
+                Turn your datasets into revenue streams. Set your price, earn TFIL tokens, and let 
+                the blockchain handle payments automatically.
+              </p>
+              <ul className="space-y-3">
+                <li className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 dark:text-gray-300">Set custom prices in TFIL tokens</span>
+                </li>
+                <li className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 dark:text-gray-300">Automatic payment processing on purchase</span>
+                </li>
+                <li className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                  <span className="text-gray-700 dark:text-gray-300">Track earnings and sales analytics</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Combined Benefits */}
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 md:p-12 text-white">
+            <div className="grid md:grid-cols-3 gap-8">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <Database className="w-8 h-8" />
+                </div>
+                <h4 className="text-xl font-bold mb-2">Decentralized Storage</h4>
+                <p className="text-blue-100">
+                  No single point of failure. Your data is distributed across the Filecoin network.
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <Shield className="w-8 h-8" />
+                </div>
+                <h4 className="text-xl font-bold mb-2">Verifiable Proofs</h4>
+                <p className="text-blue-100">
+                  Cryptographic proofs ensure your data is stored correctly and can be verified anytime.
+                </p>
+              </div>
+              <div className="text-center">
+                <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <Zap className="w-8 h-8" />
+                </div>
+                <h4 className="text-xl font-bold mb-2">Programmable Payments</h4>
+                <p className="text-blue-100">
+                  Automated payment streams handle storage costs and revenue distribution seamlessly.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Use Cases */}
       <section id="use-cases" className="py-24 px-4 bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20">
         <div className="max-w-7xl mx-auto">
@@ -389,10 +494,10 @@ const FileScope = () => {
             <div>
               <h4 className="font-semibold mb-4">Product</h4>
               <div className="space-y-2 text-gray-400">
-                <div>Features</div>
-                <div>How it Works</div>
-                <div>Use Cases</div>
-                <div>API Docs</div>
+                <a href="#features" className="hover:text-white transition-colors cursor-pointer">Features</a>
+                <a href="#how-it-works" className="hover:text-white transition-colors cursor-pointer">How it Works</a>
+                <a href="#use-cases" className="hover:text-white transition-colors cursor-pointer">Use Cases</a>
+                <a href="/faq" className="hover:text-white transition-colors cursor-pointer">FAQ</a>
               </div>
             </div>
             
