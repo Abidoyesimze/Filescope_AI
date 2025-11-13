@@ -627,7 +627,7 @@ const FileScopeApp = () => {
     // Clear any existing saved state to prevent restoration from interfering
     clearSavedState();
     sessionStorage.removeItem('analysisResults');
-    
+
     // Reset previous state
     setAnalysisResults(null);
     setIpfsHash(null);
@@ -800,9 +800,9 @@ const FileScopeApp = () => {
               // Only navigate if we have confirmed blockchain data
               if (resultsData.blockchainData && resultsData.blockchainData.status === 'confirmed') {
                 console.log('✅ Found completed results with confirmed transaction, navigating to results page');
-                clearSavedState();
-                router.push('/results');
-                return;
+            clearSavedState();
+            router.push('/results');
+            return;
               } else {
                 // Results exist but transaction not confirmed - clear and restart
                 console.log('⚠️ Results exist but transaction not confirmed, clearing state');
@@ -891,16 +891,16 @@ const FileScopeApp = () => {
                       } else if (parsedState.fileName) {
                         // Fallback to mock file if IndexedDB doesn't have it
                         console.log('⚠️ File not in IndexedDB, using mock file');
-                        const mockFile = new File([''], parsedState.fileName, { 
-                          type: parsedState.fileType || 'text/csv',
-                          lastModified: Date.now()
-                        });
-                        setUploadedFile(mockFile);
-                      }
-                      
+                    const mockFile = new File([''], parsedState.fileName, { 
+                      type: parsedState.fileType || 'text/csv',
+                      lastModified: Date.now()
+                    });
+                    setUploadedFile(mockFile);
+                  }
+                  
                       // Continue monitoring the analysis - call it after state is restored
                       setTimeout(() => {
-                        continueAnalysisMonitoring(String(parsedState.currentAnalysisId));
+                  continueAnalysisMonitoring(String(parsedState.currentAnalysisId));
                       }, 100);
                     })
                     .catch((error) => {
@@ -1160,10 +1160,10 @@ const FileScopeApp = () => {
                     </span>
                   )}
                 </div>
-                {blockchainData && (
+                  {blockchainData && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                     Transaction: {blockchainData.slice(0, 10)}...{blockchainData.slice(-8)}
-                  </p>
+                </p>
                 )}
               </div>
 
@@ -1171,15 +1171,15 @@ const FileScopeApp = () => {
               <div className="space-y-3 mb-8">
                 {/* Step 1: Payment Setup (for paid datasets) */}
                 {isPaid && priceInFIL && parseFloat(priceInFIL) > 0 && (
-                  <div className={`flex items-center space-x-4 p-4 rounded-lg border ${
+                <div className={`flex items-center space-x-4 p-4 rounded-lg border ${
                     analysisProgress >= 5
-                      ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800' 
+                    ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800' 
                       : analysisProgress >= 2
                         ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800' 
                         : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-                  }`}>
+                }`}>
                     {analysisProgress >= 5 ? (
-                      <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+                    <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
                     ) : analysisProgress >= 2 ? (
                       <Loader className="w-6 h-6 text-blue-600 flex-shrink-0 animate-spin" />
                     ) : (
@@ -1355,7 +1355,7 @@ const FileScopeApp = () => {
 
                 {/* Step 6: Blockchain Registration */}
                 <div className={`flex items-center space-x-4 p-4 rounded-lg border ${
-                  analysisProgress >= 100
+                  analysisProgress >= 100 
                     ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800' 
                     : analysisProgress >= 95
                       ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800' 
@@ -1581,34 +1581,34 @@ const FileScopeApp = () => {
                   </div>
                 </div>
 
-              {/* Visibility Toggle */}
-              <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      isPublic 
-                        ? 'bg-blue-50 dark:bg-blue-900/30' 
-                        : 'bg-gray-50 dark:bg-gray-700'
-                    }`}>
-                      {isPublic ? (
-                        <Eye className="w-5 h-5 text-blue-600" />
-                      ) : (
-                        <Shield className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                      )}
+                {/* Visibility Toggle */}
+                <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                        isPublic 
+                          ? 'bg-blue-50 dark:bg-blue-900/30' 
+                          : 'bg-gray-50 dark:bg-gray-700'
+                      }`}>
+                        {isPublic ? (
+                          <Eye className="w-5 h-5 text-blue-600" />
+                        ) : (
+                          <Shield className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                        )}
+                      </div>
+                      <div>
+                        <h5 className="font-medium text-gray-900 dark:text-white">
+                          {isPublic ? 'Public Dataset' : 'Private Dataset'}
+                        </h5>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          {isPublic 
+                            ? 'Analysis will be visible to everyone in the explorer' 
+                            : 'Analysis will only be visible to you'
+                          }
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h5 className="font-medium text-gray-900 dark:text-white">
-                        {isPublic ? 'Public Dataset' : 'Private Dataset'}
-                      </h5>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {isPublic 
-                          ? 'Analysis will be visible to everyone in the explorer' 
-                          : 'Analysis will only be visible to you'
-                        }
-                      </p>
-                    </div>
-                  </div>
-                  <button
+                    <button
                     onClick={() => {
                       setIsPublic(!isPublic);
                       // If making private, disable paid option (private datasets cannot be paid)
@@ -1617,18 +1617,18 @@ const FileScopeApp = () => {
                         setPriceInFIL('');
                       }
                     }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                      isPublic ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        isPublic ? 'translate-x-6' : 'translate-x-1'
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                        isPublic ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'
                       }`}
-                    />
-                  </button>
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          isPublic ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
-              </div>
 
               {/* Paid Dataset Toggle (only for public datasets) */}
               {isPublic && (

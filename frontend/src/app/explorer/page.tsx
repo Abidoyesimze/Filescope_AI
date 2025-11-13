@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { fileStoreContract } from '../index';
+import { getFilecoinCloudService } from '../../services/filecoinCloud';
+import { wagmiConfig } from '../../lib/web3';
 import JSZip from 'jszip';
 
 // Proper TypeScript interfaces
@@ -32,7 +34,8 @@ interface DatasetMetadata {
   rows: number;
   columns: number;
   uploadDate: string;
-  ipfsHash: string;
+  ipfsHash: string; // This is the dataset CID (could be FOC PieceCID or IPFS CID)
+  analysisCID: string; // Analysis report CID (always IPFS)
   contractAddress: string;
   blockNumber: string;
   isPublic: boolean;
@@ -204,8 +207,12 @@ const DatasetExplorer = () => {
   
   const { address, isConnected } = useAccount();
   const { writeContract, data: purchaseHash, isPending: isPurchasing } = useWriteContract();
+  const { writeContract: writeApproval, data: approvalHash, isPending: isApproving } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isPurchaseConfirmed } = useWaitForTransactionReceipt({
     hash: purchaseHash,
+  });
+  const { isLoading: isApprovalConfirming, isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({
+    hash: approvalHash,
   });
 
   const { data: contractDatasets, isLoading: contractLoading } = useReadContract({
@@ -224,6 +231,13 @@ const DatasetExplorer = () => {
     },
   });
 
+  // Fetch accepted payment tokens
+  const { data: acceptedTokens } = useReadContract({
+    address: fileStoreContract.address as `0x${string}`,
+    abi: fileStoreContract.abi,
+    functionName: 'getAcceptedTokens',
+  });
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -233,18 +247,41 @@ const DatasetExplorer = () => {
     if (purchasedDatasetIds && Array.isArray(purchasedDatasetIds)) {
       const purchasedSet = new Set(purchasedDatasetIds.map((id: bigint) => Number(id)));
       setMyPurchases(purchasedSet);
+      console.log('📦 Updated purchases:', Array.from(purchasedSet));
     }
   }, [purchasedDatasetIds]);
 
-  // Handle purchase confirmation
+  // Refetch purchases after purchase confirmation
+  const { refetch: refetchPurchases } = useReadContract({
+    address: fileStoreContract.address as `0x${string}`,
+    abi: fileStoreContract.abi,
+    functionName: 'getMyPurchases',
+    query: {
+      enabled: false, // Only fetch when explicitly called
+    },
+  });
+
+  // Handle purchase confirmation - refetch purchases and update UI
   useEffect(() => {
     if (isPurchaseConfirmed && selectedDataset) {
-      toast.success('Dataset purchased successfully!');
+      toast.success('Dataset purchased successfully! You can now download it.', { 
+        id: 'purchase',
+        duration: 5000,
+        icon: '✅'
+      });
+      // Immediately update local state
       setMyPurchases(prev => new Set([...prev, selectedDataset.id]));
-      setPurchaseModalOpen(false);
-      setSelectedDataset(null);
+      // Refetch purchases from contract to ensure consistency
+      if (isConnected && address) {
+        refetchPurchases();
+      }
+      // Close modal after a short delay to show success
+      setTimeout(() => {
+        setPurchaseModalOpen(false);
+        setSelectedDataset(null);
+      }, 1500);
     }
-  }, [isPurchaseConfirmed, selectedDataset]);
+  }, [isPurchaseConfirmed, selectedDataset, isConnected, address, refetchPurchases]);
 
   // Fetch IPFS data helper
   const fetchIPFSData = useCallback(async (cid: string): Promise<IPFSData> => {
@@ -777,7 +814,7 @@ const DatasetExplorer = () => {
                 format: getAttributeValue<string>(ipfsData.attributes, 'File Type', 'Unknown')
               });
 
-              // Convert price from wei to TFIL (1 TFIL = 10^18 wei on testnet)
+              // Convert price from wei to USDFC (1 USDFC = 10^18 wei)
               const priceInFILWei = contractDataset.priceInFIL || BigInt(0);
               const priceInFILRaw = priceInFILWei > 0 
                 ? (Number(priceInFILWei) / 1e18).toFixed(6)
@@ -795,7 +832,8 @@ const DatasetExplorer = () => {
                   rows: rows,
                   columns: columns,
                   uploadDate: new Date(Number(contractDataset.timestamp) * 1000).toISOString(),
-                  ipfsHash: contractDataset.analysisCID,
+                  ipfsHash: contractDataset.datasetCID, // Dataset CID (FOC PieceCID or IPFS CID)
+                  analysisCID: contractDataset.analysisCID, // Analysis CID (always IPFS)
                   contractAddress: fileStoreContract.address,
                   blockNumber: '0',
                   isPublic: contractDataset.isPublic,
@@ -920,40 +958,219 @@ const DatasetExplorer = () => {
     setPurchaseModalOpen(true);
   };
 
-  // Execute purchase transaction
+  // State for approval flow
+  const [needsApproval, setNeedsApproval] = useState(false);
+  const [approvalTokenAddress, setApprovalTokenAddress] = useState<`0x${string}` | null>(null);
+
+  // Execute purchase transaction with approval
   const executePurchase = async () => {
-    if (!selectedDataset || !isConnected) {
+    if (!selectedDataset || !isConnected || !address) {
       toast.error('Please connect your wallet');
       return;
     }
 
     try {
-      // Use native TFIL token (address(0) for native token on testnet)
-      const nativeTokenAddress = '0x0000000000000000000000000000000000000000' as `0x${string}`;
+      // Use USDFC token address for Calibration testnet
+      // Contract address: 0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0
+      const USDFC_ADDRESS = '0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0' as `0x${string}`;
+      
+      // Check if USDFC is in accepted tokens, otherwise use it directly
+      // (The contract owner should add it, but we'll use it anyway)
+      let paymentTokenAddress: `0x${string}` = USDFC_ADDRESS;
+      
+      if (acceptedTokens && Array.isArray(acceptedTokens) && acceptedTokens.length > 0) {
+        // Prefer USDFC if it's in the list, otherwise use first accepted token
+        const usdfcInList = acceptedTokens.find((addr: string) => 
+          addr.toLowerCase() === USDFC_ADDRESS.toLowerCase()
+        );
+        if (usdfcInList) {
+          paymentTokenAddress = usdfcInList as `0x${string}`;
+        } else {
+          paymentTokenAddress = acceptedTokens[0] as `0x${string}`;
+        }
+      }
+
+      const { readContract } = await import('wagmi/actions');
+
+      // ERC20 ABI for allowance and approve
+      const ERC20_ABI = [
+        {
+          name: 'allowance',
+          type: 'function',
+          stateMutability: 'view',
+          inputs: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' }
+          ],
+          outputs: [{ name: '', type: 'uint256' }]
+        },
+        {
+          name: 'approve',
+          type: 'function',
+          stateMutability: 'nonpayable',
+          inputs: [
+            { name: 'spender', type: 'address' },
+            { name: 'amount', type: 'uint256' }
+          ],
+          outputs: [{ name: '', type: 'bool' }]
+        }
+      ] as const;
+
+      // Check current allowance
+      const currentAllowance = await readContract(wagmiConfig, {
+        address: paymentTokenAddress,
+        abi: ERC20_ABI,
+        functionName: 'allowance',
+        args: [address, fileStoreContract.address as `0x${string}`],
+      });
+
+      const priceInWei = selectedDataset.pricing.priceInFILWei;
+      
+      // If allowance is insufficient, we need to approve first
+      if (currentAllowance < priceInWei) {
+        setNeedsApproval(true);
+        setApprovalTokenAddress(paymentTokenAddress);
+        
+        toast.loading('Approving USDFC token...', { id: 'approval' });
+        
+        // Approve a larger amount to avoid repeated approvals (1000x the price)
+        const approvalAmount = priceInWei * BigInt(1000);
+        
+        writeApproval({
+          address: paymentTokenAddress,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [fileStoreContract.address as `0x${string}`, approvalAmount],
+        });
+        
+        // Don't proceed with purchase yet - wait for approval confirmation
+        return;
+      }
+
+      // Allowance is sufficient, proceed with purchase
+      toast.loading('Estimating gas...', { id: 'purchase' });
+      
+      // Estimate gas for the purchase transaction
+      const { estimateGas } = await import('wagmi/actions');
+      const estimatedGas = await estimateGas(wagmiConfig, {
+        account: address,
+        address: fileStoreContract.address as `0x${string}`,
+        abi: fileStoreContract.abi,
+        functionName: 'purchaseDataset',
+        args: [BigInt(selectedDataset.id), paymentTokenAddress],
+      });
+      
+      // Add 30% buffer to estimated gas for Filecoin transactions
+      const gasLimit = (estimatedGas * BigInt(130)) / BigInt(100);
+      
+      toast.loading('Processing purchase...', { id: 'purchase' });
       
       writeContract({
         address: fileStoreContract.address as `0x${string}`,
         abi: fileStoreContract.abi,
         functionName: 'purchaseDataset',
-        args: [BigInt(selectedDataset.id), nativeTokenAddress],
+        args: [BigInt(selectedDataset.id), paymentTokenAddress],
+        gas: gasLimit,
       });
       
-      toast.loading('Processing purchase...', { id: 'purchase' });
     } catch (error) {
       console.error('Purchase failed:', error);
-      toast.error('Purchase failed. Please try again.', { id: 'purchase' });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (errorMessage.includes('insufficient') || errorMessage.includes('balance')) {
+        toast.error('Insufficient USDFC balance. Please ensure you have enough tokens.', { id: 'purchase' });
+      } else if (errorMessage.includes('allowance') || errorMessage.includes('approve')) {
+        toast.error('Token approval failed. Please try again.', { id: 'purchase' });
+      } else if (errorMessage.includes('not accepted') || errorMessage.includes('Payment token')) {
+        toast.error('Payment token not accepted by contract. Please contact support.', { id: 'purchase' });
+      } else if (errorMessage.includes('gas') || errorMessage.includes('out of gas') || errorMessage.includes('SysErrOutOfGas')) {
+        toast.error('Transaction failed due to insufficient gas. Gas estimation and buffer have been applied.', { id: 'purchase' });
+      } else {
+        toast.error(`Purchase failed: ${errorMessage}`, { id: 'purchase' });
+      }
     }
   };
 
-  // Download original dataset (full JSON)
+  // Handle approval confirmation and proceed with purchase
+  useEffect(() => {
+    if (needsApproval && approvalTokenAddress && isApprovalConfirmed && selectedDataset) {
+      setNeedsApproval(false);
+      toast.success('Token approved! Proceeding with purchase...', { id: 'approval' });
+      
+      // Now execute the purchase with gas estimation
+      setTimeout(async () => {
+        try {
+          toast.loading('Estimating gas...', { id: 'purchase' });
+          
+          // Estimate gas for the purchase transaction
+          const { estimateGas } = await import('wagmi/actions');
+          const estimatedGas = await estimateGas(wagmiConfig, {
+            account: address,
+            address: fileStoreContract.address as `0x${string}`,
+            abi: fileStoreContract.abi,
+            functionName: 'purchaseDataset',
+            args: [BigInt(selectedDataset.id), approvalTokenAddress],
+          });
+          
+          // Add 30% buffer to estimated gas for Filecoin transactions
+          const gasLimit = (estimatedGas * BigInt(130)) / BigInt(100);
+          
+          toast.loading('Processing purchase...', { id: 'purchase' });
+          
+          writeContract({
+            address: fileStoreContract.address as `0x${string}`,
+            abi: fileStoreContract.abi,
+            functionName: 'purchaseDataset',
+            args: [BigInt(selectedDataset.id), approvalTokenAddress],
+            gas: gasLimit,
+          });
+        } catch (error) {
+          console.error('Gas estimation failed, using default:', error);
+          // Fallback: use a high gas limit if estimation fails
+          writeContract({
+            address: fileStoreContract.address as `0x${string}`,
+            abi: fileStoreContract.abi,
+            functionName: 'purchaseDataset',
+            args: [BigInt(selectedDataset.id), approvalTokenAddress],
+            gas: BigInt(10000000), // 10M gas as fallback
+          });
+          toast.loading('Processing purchase...', { id: 'purchase' });
+        }
+      }, 1000);
+    }
+  }, [needsApproval, approvalTokenAddress, isApprovalConfirmed, selectedDataset, writeContract, address]);
+
+  // Helper to check if CID is FOC PieceCID (starts with 'bafk' or similar FOC patterns)
+  const isFOCPieceCID = (cid: string): boolean => {
+    return cid.startsWith('bafk') || cid.length > 60; // FOC PieceCIDs are typically longer
+  };
+
+  // Download original dataset (handles both IPFS and FOC)
   const downloadOriginalDataset = async (dataset: Dataset) => {
     try {
       toast.loading('Downloading original dataset...', { id: 'download-original' });
-      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${dataset.metadata.ipfsHash}`);
+      
+      let data: Blob;
+      const cid = dataset.metadata.ipfsHash;
+
+      if (isFOCPieceCID(cid)) {
+        // Download from FOC
+        if (!window.ethereum) {
+          throw new Error('Ethereum provider not found');
+        }
+        const focService = getFilecoinCloudService();
+        await focService.initialize(window.ethereum);
+        const fileData = await focService.downloadDataset(cid);
+        data = new Blob([fileData], { type: 'application/octet-stream' });
+      } else {
+        // Download from IPFS
+        const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
       if (!response.ok) {
         throw new Error('Failed to fetch original dataset');
       }
-      const data = await response.blob();
+        data = await response.blob();
+      }
+
       const url = window.URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
@@ -965,15 +1182,17 @@ const DatasetExplorer = () => {
       toast.success('Original dataset downloaded successfully', { id: 'download-original' });
     } catch (error) {
       console.error('Download original failed:', error);
-      toast.error('Download original failed', { id: 'download-original' });
+      toast.error(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'download-original' });
     }
   };
 
-  // Download analysis results (PDF)
+  // Download analysis results (PDF) - analysis is always on IPFS
   const downloadAnalysisResults = async (dataset: Dataset) => {
     try {
       toast.loading('Downloading analysis report...', { id: 'download-analysis' });
-      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${dataset.metadata.ipfsHash}`);
+      // Analysis CID is stored in metadata
+      const analysisCID = dataset.metadata.analysisCID;
+      const response = await fetch(`https://gateway.pinata.cloud/ipfs/${analysisCID}`);
       if (!response.ok) {
         throw new Error('Failed to fetch analysis report');
       }
@@ -989,26 +1208,44 @@ const DatasetExplorer = () => {
       toast.success('Analysis report downloaded successfully', { id: 'download-analysis' });
     } catch (error) {
       console.error('Download analysis failed:', error);
-      toast.error('Download analysis failed', { id: 'download-analysis' });
+      toast.error(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'download-analysis' });
     }
   };
 
   // Download complete dataset (original + analysis)
   const downloadCompleteDataset = async (dataset: Dataset) => {
     try {
-      toast.loading('Downloading complete dataset...', { id: 'download-complete' });
-      const originalResponse = await fetch(`https://gateway.pinata.cloud/ipfs/${dataset.metadata.ipfsHash}`);
+      toast.loading('Downloading complete dataset package...', { id: 'download-complete' });
+      
+      const datasetCID = dataset.metadata.ipfsHash;
+      let originalData: Blob;
+
+      // Download original dataset (from FOC or IPFS)
+      if (isFOCPieceCID(datasetCID)) {
+        if (!window.ethereum) {
+          throw new Error('Ethereum provider not found');
+        }
+        const focService = getFilecoinCloudService();
+        await focService.initialize(window.ethereum);
+        const fileData = await focService.downloadDataset(datasetCID);
+        originalData = new Blob([fileData], { type: 'application/octet-stream' });
+      } else {
+        const originalResponse = await fetch(`https://gateway.pinata.cloud/ipfs/${datasetCID}`);
       if (!originalResponse.ok) {
         throw new Error('Failed to fetch original dataset');
       }
-      const originalData = await originalResponse.blob();
+        originalData = await originalResponse.blob();
+      }
 
-      const analysisResponse = await fetch(`https://gateway.pinata.cloud/ipfs/${dataset.metadata.ipfsHash}`);
+      // Download analysis (always from IPFS)
+      const analysisCID = dataset.metadata.analysisCID;
+      const analysisResponse = await fetch(`https://gateway.pinata.cloud/ipfs/${analysisCID}`);
       if (!analysisResponse.ok) {
         throw new Error('Failed to fetch analysis report');
       }
       const analysisData = await analysisResponse.blob();
 
+      // Create ZIP
       const zip = new JSZip();
       zip.file(`${dataset.metadata.fileName || 'dataset'}.json`, originalData);
       zip.file(`${dataset.metadata.fileName || 'dataset'}-analysis.pdf`, analysisData);
@@ -1017,34 +1254,39 @@ const DatasetExplorer = () => {
       const url = window.URL.createObjectURL(content);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${dataset.metadata.fileName || 'dataset'}.zip`;
+      a.download = `${dataset.metadata.fileName || 'dataset'}-complete.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      toast.success('Complete dataset downloaded successfully', { id: 'download-complete' });
+      toast.success('Complete dataset package downloaded successfully', { id: 'download-complete' });
     } catch (error) {
       console.error('Download complete failed:', error);
-      toast.error('Download complete failed', { id: 'download-complete' });
+      toast.error(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'download-complete' });
     }
   };
 
   // Purchase Modal Component
   const PurchaseModal = () => {
-    if (!selectedDataset) return null;
+    if (!selectedDataset || !purchaseModalOpen) return null;
 
     return (
-      <div className={`fixed inset-0 z-50 flex items-center justify-center ${purchaseModalOpen ? '' : 'hidden'}`}>
-        <div className="fixed inset-0 bg-black bg-opacity-50" onClick={() => setPurchaseModalOpen(false)}></div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" 
+          onClick={() => !isPurchasing && !isConfirming && setPurchaseModalOpen(false)}
+        ></div>
         <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Purchase Dataset</h2>
-            <button
-              onClick={() => setPurchaseModalOpen(false)}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            >
-              ✕
-            </button>
+            {!isPurchasing && !isConfirming && (
+              <button
+                onClick={() => setPurchaseModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           <div className="mb-6">
@@ -1054,34 +1296,66 @@ const DatasetExplorer = () => {
             <p className="text-gray-600 dark:text-gray-300 text-sm mb-4">
               {selectedDataset.description}
             </p>
-            <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-600 dark:text-gray-400">Price:</span>
+                <span className="text-gray-700 dark:text-gray-300 font-medium">Price:</span>
                 <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {selectedDataset.pricing.priceInFIL} TFIL
+                  {selectedDataset.pricing.priceInFIL} USDFC
                 </span>
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                You will receive access to download the dataset and analysis report
+              <div className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                ✓ Instant access after purchase<br />
+                ✓ Download dataset and analysis report<br />
+                ✓ Permanent ownership
               </div>
             </div>
           </div>
 
-          <div className="flex space-x-3">
-            <button
-              onClick={() => setPurchaseModalOpen(false)}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={executePurchase}
-              disabled={isPurchasing || isConfirming}
-              className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isPurchasing || isConfirming ? 'Processing...' : 'Purchase'}
-            </button>
-          </div>
+          {isPurchaseConfirmed ? (
+            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
+              <div className="flex items-center space-x-2 text-green-700 dark:text-green-300">
+                <span className="text-xl">✅</span>
+                <span className="font-medium">Purchase confirmed! You can now download the dataset.</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setPurchaseModalOpen(false)}
+                disabled={isPurchasing || isConfirming || isApproving || isApprovalConfirming}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executePurchase}
+                disabled={isPurchasing || isConfirming || isApproving || isApprovalConfirming}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                {isApproving || isApprovalConfirming ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    <span>Approving token...</span>
+                  </>
+                ) : isPurchasing ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    <span>Waiting for wallet...</span>
+                  </>
+                ) : isConfirming ? (
+                  <>
+                    <span className="animate-spin">⏳</span>
+                    <span>Confirming...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart className="w-4 h-4" />
+                    <span>Purchase</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1093,15 +1367,15 @@ const DatasetExplorer = () => {
       <div className="p-6">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {dataset.title}
-          </h3>
+          {dataset.title}
+        </h3>
           {dataset.pricing.isPaid && (
             <span className={`px-2 py-1 text-xs font-medium rounded-full ${
               dataset.isPurchased 
                 ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
                 : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
             }`}>
-              {dataset.isPurchased ? 'Owned' : `${dataset.pricing.priceInFIL} TFIL`}
+              {dataset.isPurchased ? 'Owned' : `${dataset.pricing.priceInFIL} USDFC`}
             </span>
           )}
         </div>
@@ -1168,46 +1442,46 @@ const DatasetExplorer = () => {
               className="w-full inline-flex items-center justify-center space-x-2 px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
               <ShoppingCart className="w-4 h-4" />
-              <span>Purchase for {dataset.pricing.priceInFIL} TFIL</span>
+              <span>Purchase for {dataset.pricing.priceInFIL} USDFC</span>
             </button>
           ) : (
             <>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-300 font-medium">Download Options</span>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-600 dark:text-gray-300 font-medium">Download Options</span>
                 {dataset.pricing.isPaid && dataset.isPurchased && (
                   <span className="text-xs text-green-600 dark:text-green-400 flex items-center space-x-1">
                     <Verified className="w-3 h-3" />
                     <span>Owned</span>
                   </span>
                 )}
-              </div>
-              
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => downloadOriginalDataset(dataset)}
+          </div>
+          
+          <div className="flex space-x-2">
+            <button
+              onClick={() => downloadOriginalDataset(dataset)}
                   disabled={dataset.pricing.isPaid && !dataset.isPurchased}
                   className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>Original</span>
-                </button>
-                <button
-                  onClick={() => downloadAnalysisResults(dataset)}
+            >
+              <Download className="w-3 h-3" />
+              <span>Original</span>
+            </button>
+            <button
+              onClick={() => downloadAnalysisResults(dataset)}
                   disabled={dataset.pricing.isPaid && !dataset.isPurchased}
                   className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <FileText className="w-3 h-3" />
-                  <span>Report</span>
-                </button>
-                <button
-                  onClick={() => downloadCompleteDataset(dataset)}
+            >
+              <FileText className="w-3 h-3" />
+              <span>Report</span>
+            </button>
+            <button
+              onClick={() => downloadCompleteDataset(dataset)}
                   disabled={dataset.pricing.isPaid && !dataset.isPurchased}
                   className="flex-1 inline-flex items-center justify-center space-x-1 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>Full Package</span>
-                </button>
-              </div>
+            >
+              <Download className="w-3 h-3" />
+              <span>Full Package</span>
+            </button>
+          </div>
             </>
           )}
         </div>
@@ -1238,7 +1512,7 @@ const DatasetExplorer = () => {
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
                   : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
               }`}>
-                {dataset.isPurchased ? 'Owned' : `${dataset.pricing.priceInFIL} TFIL`}
+                {dataset.isPurchased ? 'Owned' : `${dataset.pricing.priceInFIL} USDFC`}
               </span>
             )}
           </div>
@@ -1289,41 +1563,41 @@ const DatasetExplorer = () => {
               className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all shadow-lg hover:shadow-xl"
             >
               <ShoppingCart className="w-4 h-4" />
-              <span>Purchase {dataset.pricing.priceInFIL} TFIL</span>
+              <span>Purchase {dataset.pricing.priceInFIL} USDFC</span>
             </button>
           ) : (
-            <div className="flex space-x-2">
+          <div className="flex space-x-2">
               {dataset.pricing.isPaid && dataset.isPurchased && (
                 <span className="text-xs text-green-600 dark:text-green-400 flex items-center space-x-1 mr-2">
                   <Verified className="w-3 h-3" />
                   <span>Owned</span>
                 </span>
               )}
-              <button
-                onClick={() => downloadOriginalDataset(dataset)}
+            <button
+              onClick={() => downloadOriginalDataset(dataset)}
                 disabled={dataset.pricing.isPaid && !dataset.isPurchased}
                 className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Download className="w-3 h-3" />
-                <span>Original</span>
-              </button>
-              <button
-                onClick={() => downloadAnalysisResults(dataset)}
+            >
+              <Download className="w-3 h-3" />
+              <span>Original</span>
+            </button>
+            <button
+              onClick={() => downloadAnalysisResults(dataset)}
                 disabled={dataset.pricing.isPaid && !dataset.isPurchased}
                 className="inline-flex items-center space-x-1 px-3 py-1.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <FileText className="w-3 h-3" />
-                <span>Report</span>
-              </button>
-              <button
-                onClick={() => downloadCompleteDataset(dataset)}
+            >
+              <FileText className="w-3 h-3" />
+              <span>Report</span>
+            </button>
+            <button
+              onClick={() => downloadCompleteDataset(dataset)}
                 disabled={dataset.pricing.isPaid && !dataset.isPurchased}
                 className="inline-flex items-center space-x-1 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Download className="w-3 h-3" />
-                <span>Full Package</span>
-              </button>
-            </div>
+            >
+              <Download className="w-3 h-3" />
+              <span>Full Package</span>
+            </button>
+          </div>
           )}
         </div>
       </div>
