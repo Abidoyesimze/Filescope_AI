@@ -255,6 +255,9 @@ const DatasetExplorer = () => {
       const purchasedSet = new Set(purchasedDatasetIds.map((id: bigint) => Number(id)));
       setMyPurchases(purchasedSet);
       console.log('📦 Updated purchases:', Array.from(purchasedSet));
+    } else if (!purchasedDatasetIds) {
+      // Reset to empty set if no purchases
+      setMyPurchases(new Set());
     }
   }, [purchasedDatasetIds]);
 
@@ -825,6 +828,10 @@ const DatasetExplorer = () => {
           const processedDatasets: Dataset[] = [];
           const { readContract } = await import('wagmi/actions');
           const { wagmiConfig } = await import('../../lib/web3');
+          
+          // If user is connected, also check access directly from contract for each dataset
+          // This ensures purchase status is accurate even if getMyPurchases hasn't loaded yet
+          const checkAccessForUser = isConnected && address;
 
           // Type guard to ensure contractDatasets is an array
           if (!Array.isArray(contractDatasets)) {
@@ -908,6 +915,30 @@ const DatasetExplorer = () => {
                 : '0';
               const priceInFIL = formatPrice(priceInFILRaw);
 
+              // Check purchase status: use myPurchases if available, otherwise check contract directly
+              let isPurchased = myPurchases.has(datasetId);
+              
+              // If user is connected and we don't have purchase info yet, check contract directly
+              if (checkAccessForUser && contractDataset.isPaid && !isPurchased) {
+                try {
+                  const hasAccess = await readContract(wagmiConfig, {
+                    address: fileStoreContract.address as `0x${string}`,
+                    abi: fileStoreContract.abi,
+                    functionName: 'checkAccess',
+                    args: [BigInt(datasetId), address],
+                  }) as boolean;
+                  
+                  if (hasAccess) {
+                    isPurchased = true;
+                    // Also update myPurchases set for consistency
+                    setMyPurchases(prev => new Set([...prev, datasetId]));
+                  }
+                } catch (error) {
+                  console.warn(`Failed to check access for dataset ${datasetId}:`, error);
+                  // Fall back to myPurchases.has() result
+                }
+              }
+
               const dataset: Dataset = {
                 id: datasetId, // Use the correct dataset ID from contract
                 title: ipfsData.name || `Dataset ${datasetId + 1}`,
@@ -934,7 +965,7 @@ const DatasetExplorer = () => {
                   priceInFIL,
                   priceInFILWei,
                 },
-                isPurchased: myPurchases.has(datasetId),
+                isPurchased: isPurchased,
                 results: {
                   metrics: {
                     quality_score: ipfsData.results?.metrics?.quality_score || 0,
@@ -1000,7 +1031,17 @@ const DatasetExplorer = () => {
 
       processDatasets();
     }
-  }, [mounted, contractDatasets, contractLoading, totalDatasetsCount, fetchIPFSData, myPurchases]);
+  }, [
+    mounted, 
+    contractDatasets, 
+    contractLoading, 
+    totalDatasetsCount, 
+    fetchIPFSData, 
+    // Convert Set to sorted array for stable dependency comparison
+    Array.from(myPurchases).sort().join(','), 
+    isConnected ?? false, 
+    address ?? ''
+  ]);
 
   // Helper functions
   const getAttributeValue = <T extends string | number>(attributes: Array<{ trait_type: string; value: string | number }>, traitType: string, defaultValue: T): T => {
